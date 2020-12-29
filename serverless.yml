@@ -1,0 +1,96 @@
+service: serverless-react-introduction
+app: serverless-react-introduction
+org: brayoh
+
+frameworkVersion: '2'
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  region: eu-west-1
+  stage: ${opt:stage, env:stage, 'dev'}
+  tableThroughputs:
+    default: 5
+    prod: 10
+  tableThroughput: ${self:provider.tableThroughputs.${self:provider.stage}, self:provider.tableThroughputs.default}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:DescribeTable
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - lambda:GetFunction,
+        - lambda:CreateFunction,
+        - lambda:DeleteFunction,
+        - lambda:UpdateFunctionConfiguration,
+        - lambda:UpdateFunctionCode,
+        - lambda:ListVersionsByFunction,
+        - lambda:PublishVersion,
+        - lambda:CreateAlias,
+        - lambda:DeleteAlias,
+        - lambda:UpdateAlias,
+        - lambda:GetFunctionConfiguration,
+        - lambda:AddPermission,
+        - lambda:RemovePermission,
+        - lambda:InvokeFunction
+      Resource:
+        - "arn:aws:dynamodb:${self:provider.region}:*:*" # allow creation of tables in our current region
+        - "arn:aws:lambda:${self:provider.region}:*:*" # allow in current region
+
+plugins:
+  - serverless-appsync-plugin
+  - serverless-stack-output
+
+custom:
+  resources:
+    PRIMARY_TABLE: ${self:service}-dynamo-table-${self:provider.stage}
+
+  output:
+    handler: ./scripts/output.handler
+    file: ./client/src/aws-exports.json
+
+  appSync: # appsync plugin configuration
+    name: ${self:service}-appsync-${self:provider.stage}
+    authenticationType: API_KEY # since we don't have user login for now
+    dataSources:
+      - type: AMAZON_DYNAMODB
+        name: PrimaryTable
+        description: "Primary Table"
+        config:
+          tableName: ${self:custom.resources.PRIMARY_TABLE}
+          serviceRoleArn: { Fn::GetAtt: [AppSyncDynamoDBServiceRole, Arn] }
+
+    mappingTemplates:
+      - dataSource: PrimaryTable
+        type: Mutation
+        field: createTodo
+        request: "create_todo/request.vtl"
+        response: "common-item-response.vtl"
+      - dataSource: PrimaryTable
+        type: Mutation
+        field: updateTodo
+        request: "update_todo/request.vtl"
+        response: "common-item-response.vtl"
+      - dataSource: PrimaryTable
+        type: Mutation
+        field: deleteTodo
+        request: "delete_todo/request.vtl"
+        response: "common-item-response.vtl"
+      - dataSource: PrimaryTable
+        type: Query
+        field: getToDo
+        request: "get_todo/request.vtl"
+        response: "common-item-response.vtl"
+      - dataSource: PrimaryTable
+        type: Query
+        field: listToDos
+        request: "list_todos/request.vtl"
+        response: "common-items-response.vtl"
+
+resources:
+  - ${file(./resources/appsync-dynamo-role.yml)}
+  - ${file(./resources/dynamo-table.yml)}
